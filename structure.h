@@ -49,6 +49,7 @@ size_t queue_length(const Queue queue);
 
 /**
  * @note New implementations soon
+ * @note Not tested
  */
 
 //////////////////
