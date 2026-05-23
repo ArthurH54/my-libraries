@@ -1,346 +1,326 @@
-// @return A constant indicating success or error
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include "structure.h"
 
-/**
- * @brief Helper to verify the conditions of "insert" functions
- * @param position Pointer for the position in which a new node will be inserted
- * @param element The element whose content will be stored
- * @param size The size of the element in bytes
- * @return A constant indicating success or error
- */
-static StructureResult structure_verify_insert_param(const void* structure, const void* element, size_t size) {
-    if(structure == NULL) return STRUCTURE_NOT_CREATED;
-    if(element == NULL) return STRUCTURE_NULL_ELEMENT;
-    if(size == 0) return STRUCTURE_INVALID_SIZE; 
-    else return STRUCTURE_OK;
-}
-
-//////////////////
-
 typedef struct __Node {
-    void* data;
     struct __Node* prev;
     struct __Node* next;
+    void* data;
+    size_t size;
+    LinkedList container;
 } _Node;
-typedef _Node* Node;
 
 /**
- * @brief Helper for the creation of a node through the copy of an element
- * @param element The element whose content will be stored
+ * @brief Creates a node through the copy of an element
+ * @param element Pointer to the element whose content will be stored
  * @param size The size of the element in bytes
  * @return Pointer to the created node, or NULL on failure
  */
-static Node node_create(const void* element, size_t size) {
-     // Creates the node to be pushed and verifies if it's correctly initialized
-    Node newNode = calloc(1, sizeof(_Node));
-    /* if error */ if(newNode == NULL) return NULL;
-    newNode->data = malloc(size); 
-    /* if error */ if(newNode->data == NULL) { free(newNode); return NULL; }                                 
-    memcpy(newNode->data, element, size);
-    return newNode;
+Node node_create(const void* element, size_t size) {
+    if(element == NULL) return NULL;
+    if(size == 0) return NULL;
+
+    Node node = calloc(1, sizeof(_Node));
+    if(node == NULL) return NULL;
+
+    node->data = malloc(size); 
+    if(node->data == NULL) { free(node); return NULL; }     
+
+    memcpy(node->data, element, size);
+    node->size = size;
+
+    return node;
+}
+
+/** 
+ * @brief Link two nodes
+ * @param left The node on the left
+ * @param right The node on the right
+ * @return A constant indicating success or error
+*/
+StructureResult node_link(Node left, Node right) {
+    if (left != NULL)  left->next = right;
+    if(right != NULL)  right->prev = left;
+    
+    return STRUCTURE_OK;
+}
+
+/** 
+ * @brief Detach a node from its neighbors
+ * @param node Node to be unlinked
+ * @warning Node must have a previous or posterior node
+ * @return A constant indicating success or error
+*/
+StructureResult node_unlink(Node node) {
+    if(node == NULL) return STRUCTURE_NULL_NODE;
+    else {
+        StructureResult state = node_link(node->prev, node->next);
+        if(state != STRUCTURE_OK) return state;
+        node->prev = NULL;
+        node->next = NULL;
+        return state;
+    }
 }
 
 /**
- * @brief Helper for the deallocation of a node
+ * @brief Destroys an unlinked node
  * @param node The node to be deallocated
+ * @return A constant indicating success or error
  */
-static void node_destroy(Node* node) {
+StructureResult node_destroy(Node* node) {
+    if((*node) == NULL) return STRUCTURE_NULL_NODE;
+    if((*node)->container != NULL) return STRUCTURE_CONTAINED_NODES;
+
     free((*node)->data);
     free((*node));
     (*node) = NULL;
-}
-
-/** 
- * @brief Helper for the destruction of a node and rewind to the previous one
- * @param node Pointer to the node to be destroyed
- * @warning Requires the existence of a previous node
-*/
-static void node_destroy_and_move(Node* node) {
-    // Node to be removed from the end  
-    if((*node)->next == NULL) {
-        Node prevNode;                 
-        prevNode = (*node)->prev;        
-        node_destroy(node);
-        (*node) = prevNode;
-    }
-
-    // Node to be removed from the start
-    else if((*node)->prev == NULL) {
-        Node nextNode;                 
-        nextNode = (*node)->next;        
-        node_destroy(node);
-        (*node) = nextNode;
-    }
-}
-
-/** 
- * @brief Helper for the creation of a node and the demotion of its previous
- * @param position Pointer for the position in which a new node will be inserted
- * @param element The element whose content will be stored
- * @param size The size of the element in bytes
- * @warning Requires a structure with a valid existing node
- * @return A constant indicating success or error
-*/
-static StructureResult node_append(Node* position, const void* element, size_t size) {
-    (*position)->next = node_create(element, size);
-    if((*position)->next == NULL) return STRUCTURE_FAILED_ALLOCATION; 
-    (*position)->next->prev = (*position);
-    (*position) = (*position)->next;
-    (*position)->next = NULL;
 
     return STRUCTURE_OK;
 }
+
 
 //////////////////
 
-typedef struct {
-    Node top;
+
+typedef struct __LinkedList {
+    Node start;
+    Node end;
     size_t length;
-} _Stack;
+    size_t size;
+} _LinkedList;
 
 /**
- * @brief Initializes the stack
- * @returns Stack
+ * @brief Initializes the linked list
+ * @returns Linked list
  */
-Stack stack_create() { 
-    Stack stack = calloc(1, sizeof(_Stack));
-    return stack;
+static LinkedList list_create() { 
+    LinkedList list = calloc(1, sizeof(_LinkedList));
+    return list;
 }
 
-/**
- * @brief Pushes a new member onto the top of the stack
- * @param stack Pointer to the stack
- * @param element Pointer to the element to be copied
- * @param size The size of the element in bytes
+/** 
+ * @brief Insert a node to the list
+ * @param list The list to insert the node
+ * @param node The node to be inserted
+ * @param index The position where the node will be inserted, from 0 to length
  * @return A constant indicating success or error
- */
-StructureResult stack_push(Stack stack, const void* element, size_t size) {
-    StructureResult state = structure_verify_insert_param(stack, element, size);
-    if(state != STRUCTURE_OK) return state;                                             
+*/
+static StructureResult list_insert(LinkedList list, Node node, size_t index) {
+    if(list == NULL) return STRUCTURE_NOT_CREATED;
+    if(node == NULL) return STRUCTURE_NULL_NODE;
+    if(index > list->length) return STRUCTURE_INVALID_ACCESS;
+    if(node->container != NULL) return STRUCTURE_CONTAINED_NODES;
 
-    // If stack is empty, pushes the node as the top member
-    if(stack->top == NULL) {
-        stack->top = node_create(element, size);
-        if(stack->top == NULL) return STRUCTURE_FAILED_ALLOCATION;
+    if(list->length > 0) {
+        if(index == 0) {
+            node_link(node, list->start);
+            list->start = node;
+        }
+        else if(index == list->length) {
+            node_link(list->end, node);
+            list->end = node;
+        }
+        else {
+            Node left_node = list->start;
+            for(size_t i = 0; i < index - 1; i++) left_node = left_node->next;
+            Node right_node = left_node->next;
+            node_link(node, right_node);
+            node_link(left_node, node);
+        }
     }
-                             
-    // If stack has elements, removes the previous node from the top and then pushes the new node
-    else { 
-        StructureResult state = node_append(&stack->top, element, size);   
-        if(state == STRUCTURE_FAILED_ALLOCATION) return state;
-    }                           
-
-    stack->length++;
-    return STRUCTURE_OK;
-}
-
-/**
- * @brief Removes the top of the stack, if the stack is not empty
- * @param stack Pointer to the stack
- * @return A constant indicating success or error
- */
-StructureResult stack_pop(Stack stack) {
-    if(stack == NULL) return STRUCTURE_NOT_CREATED;
-    if(stack->top == NULL) return STRUCTURE_EMPTY;
-
-    // If it's the last element 
-    if(stack->length == 1) {
-        node_destroy(&stack->top);
-        stack->top = NULL;
-        stack->length--;
-    }
-
-    // Saves the reference to the previous node, pops the top and assigns the previous node as the top
     else {
-        node_destroy_and_move(&stack->top);
-        stack->top->next = NULL;
-        stack->length--;
+        list->start = node;
+        list->end = node;
     }
 
+    node->container = list;
+
+    list->size += node->size;
+    list->length++;
+    
     return STRUCTURE_OK;
 }
 
 /** 
- * @brief Removes all elements of the stack
- * @param stack The stack to be emptied
+ * @brief Detaches a node from its list
+ * @param list The list whose node will be removed
+ * @param index The index of the node
  * @return A constant indicating success or error
 */
-StructureResult stack_clear(Stack stack) {
-    if(stack == NULL) return STRUCTURE_NOT_CREATED;
-    if(stack->top == NULL) return STRUCTURE_EMPTY;
+static Node list_detach(LinkedList list, size_t index) {
+    if(list == NULL) return NULL;
+    if(index >= list->length) return NULL;
 
-    // Pops stack until it's empty
-    StructureResult state = STRUCTURE_OK;
-    while(stack->length != 0) state = stack_pop(stack);
-    return state;
+    Node node = list->start;
+    for(size_t i = 0; i < index; i++) node = node->next;
+    Node previous = node->prev;
+    Node next = node->next;
+
+    list->size -= node->size;
+    node_unlink(node);
+
+    node->container = NULL;
+
+    if(previous == NULL) list->start = next;
+    if(next == NULL) list->end = previous;
+    
+    list->length--;
+    return node;
+}
+
+/** 
+ * @brief Removes all elements of the list
+ * @param list The list to be emptied
+ * @return A constant indicating success or error
+*/
+static StructureResult list_clear(LinkedList list) {
+    if(list == NULL) return STRUCTURE_NOT_CREATED;
+    if(list->length == 0) return STRUCTURE_EMPTY;
+
+    // Pops list until it's empty
+    while(list->length != 0) {
+        Node node = list_detach(list, 0);
+        StructureResult state = node_destroy(&node);
+        if(state != STRUCTURE_OK) return state;
+    }
+    return STRUCTURE_OK;
 }
 
 /**
- * @brief Destroys the stack, if it's not already destroyed
- * @param stack The stack to be destroyed
+ * @brief Destroys the list, if it's not already destroyed
+ * @param list The list to be destroyed
  * @return A constant indicating success or error
  */
-StructureResult stack_destroy(Stack stack) {
+static StructureResult list_destroy(LinkedList list) {
     StructureResult state = STRUCTURE_OK; 
-    if(stack != NULL) {
-        if(stack_length(stack) != 0) state = stack_clear(stack);
-        free(stack); 
+    if(list != NULL) {
+        if(list_length(list) != 0) state = list_clear(list);
+        free(list); 
         return state;
     }
     else return STRUCTURE_NOT_CREATED;
 }
 
 /**
- * @brief Returns the content of the top of the stack
- * @param stack The stack whose top will be gotten
- * @returns The top member of the stack
+ * @brief Returns the content of a member of the list
+ * @param list The list whose member will be gotten
+ * @param index The index of the member
+ * @returns The content of the member
  */
-const void* stack_peek(const Stack stack) {
-    if(stack == NULL || stack->top == NULL) return NULL;
-    else return stack->top->data;
+static const void* list_get(const LinkedList list, size_t index) {
+    if(list == NULL || index >= list->length) return NULL;
+
+    Node position = list->start;
+    for(size_t i = 0; i < index; i++) position = position->next;
+    return position->data;
 }
 
 /**
- * @brief Returns the length of the stack
- * @param stack The stack whose size will be gotten
- * @returns Stack length
+ * @brief Returns the length of the list
+ * @param list The list whose size will be gotten
+ * @returns list length
  */
-size_t stack_length(const Stack stack) {
-    if(stack == NULL) return 0; 
-    else return stack->length;
-}
-
-//////////////////
-
-typedef struct {
-    Node head;
-    Node tail;
-    size_t length;
-} _Queue;
-
-/**
- * @brief Initializes the queue
- * @returns Queue
- */
-Queue queue_create() {
-    Queue queue = calloc(1, sizeof(_Queue));
-    return queue;
-}
-
-/**
- * @brief Pushes a new member onto the tail of the queue
- * @param stack Pointer to the queue
- * @param element Pointer to the element to be copied
- * @param size The size of the element in bytes
- * @return A constant indicating success or error
- */
-StructureResult queue_enqueue(Queue queue, const void* element, size_t size) {
-    StructureResult state = structure_verify_insert_param(queue, element, size);
-    if(state != STRUCTURE_OK) return state;                                                 
-
-    // If queue is empty, pushes the node as the head and tail member
-    if(queue->head == NULL) {                                                
-        queue->head = node_create(element, size);
-        queue->tail = queue->head;                       
-        if(queue->head == NULL) return STRUCTURE_FAILED_ALLOCATION;       
-    }
-
-    // If queue has elements, removes the previous node from the tail and then pushes the new node
-    else { 
-        StructureResult state = node_append(&queue->tail, element, size);   
-        if(state == STRUCTURE_FAILED_ALLOCATION) return state;
-    }                     
-
-    queue->length++;
-    return STRUCTURE_OK;
-}
-
-/**
- * @brief Removes the first element of the queue, if the queue is not empty
- * @param queue Pointer to the queue
- * @return A constant indicating success or error
- */
-StructureResult queue_dequeue(Queue queue) {
-    if(queue == NULL) return STRUCTURE_NOT_CREATED;
-    if(queue->head == NULL) return STRUCTURE_EMPTY;
-
-    // If it's the last element 
-    if(queue->length == 1) {
-        node_destroy(&queue->head);
-        queue->tail = NULL;
-        queue->length--;
-    }
-
-    // Saves the reference to the next node, pops the head and assigns the previous node as the head
-    else {
-        node_destroy_and_move(&queue->head);
-        queue->head->prev = NULL;
-        queue->length--;
-    }
-
-    return STRUCTURE_OK;
+static size_t list_length(const LinkedList list) {
+    if(list == NULL) return 0; 
+    else return list->length;
 }
 
 /** 
- * @brief Removes all elements of the queue
- * @param queue The queue to be emptied
- * @return A constant indicating success or error
+ * @brief Returns the total size of the content of the nodes
+ * @param list The list whose size will be gotten
+ * @return The size of the list, or 0 if it's not created
 */
-StructureResult queue_clear(Queue queue) {
-    if(queue == NULL) return STRUCTURE_NOT_CREATED;
-    if(queue->head == NULL) return STRUCTURE_EMPTY;
-
-    StructureResult state = STRUCTURE_OK;
-    while(queue->length != 0) state = queue_dequeue(queue);
-    return state;
+static size_t list_size(const LinkedList list) {
+    if(list == NULL) return 0;
+    else return list->size;
 }
 
-/**
- * @brief Destroys the queue, if it's not already destroyed
- * @param queue The queue to be destroyed
- * @return A constant indicating success or error
- */
-StructureResult queue_destroy(Queue queue) {
-    StructureResult state = STRUCTURE_OK; 
-    if(queue != NULL) {
-        if(queue_length(queue) != 0) state = queue_clear(queue);
-        free(queue); 
-        return state;
-    }
-    else return STRUCTURE_NOT_CREATED;
+/** 
+ * @brief Returns the memory occupied by the list
+ * @param list The list whose occupied memory will be gotten
+ * @return The memory occupied by the list
+*/
+static size_t list_memory(const LinkedList list) {
+    if(list == NULL) return 0;
+    else return sizeof(_LinkedList)          + 
+                list->length * sizeof(_Node) + 
+                list->size;
 }
 
-/**
- * @brief Returns the content of the head of the queue
- * @param queue The queue whose head will be gotten
- * @returns const void *
- */
-const void* queue_head(const Queue queue) {
-    if(queue == NULL || queue->head == NULL) return NULL;
-    else return queue->head->data;
-}
 
-/**
- * @brief Returns the content of the tail of the queue
- * @param queue The queue whose tail will be gotten
- * @returns const void *
- */
-const void* queue_tail(const Queue queue) {
-    if(queue == NULL || queue->tail == NULL) return NULL;
-    else return queue->tail->data;
-}
+//////////////////
 
-/**
- * @brief Returns the length of the queue
- * @param queue The queue whose size will be gotten
- * @returns int
- */
-size_t queue_length(const Queue queue) {
-    if(queue == NULL) return 0; 
-    else return queue->length;
-}
+
+Stack stack_create() { return list_create(); }
+
+StructureResult stack_push(Stack stack, Node node) { return list_insert(stack, node, list_length(stack)); }
+
+Node stack_pop(Stack stack) { return list_detach(stack, list_length(stack)-1); }
+
+StructureResult stack_clear(Stack stack) { return list_clear(stack); }
+
+StructureResult stack_destroy(Stack stack) { return list_destroy(stack); }
+
+const void* stack_peek(const Stack stack) { return list_get(stack, list_length(stack)-1); }
+
+size_t stack_length(const Stack stack) { return list_length(stack); }
+
+size_t stack_size(const Stack stack) { return list_size(stack); }
+
+size_t stack_memory(const Stack stack) { return list_memory(stack); }
+
+
+//////////////////
+
+
+Queue queue_create() { return list_create(); }
+
+StructureResult queue_enqueue(Queue queue, Node node) { return list_insert(queue, node, list_length(queue)); }
+
+Node queue_dequeue(Queue queue) { return list_detach(queue, 0); }
+
+StructureResult queue_clear(Queue queue) { return list_clear(queue); }
+
+StructureResult queue_destroy(Queue queue) { return list_destroy(queue); }
+
+const void* queue_head(const Queue queue) { return list_get(queue, 0); }
+
+const void* queue_tail(const Queue queue) { return list_get(queue, list_length(queue)-1); }
+
+size_t queue_length(const Queue queue) { return list_length(queue); }
+
+size_t queue_size(const Queue queue) { return list_size(queue); }
+
+size_t queue_memory(const Queue queue) { return list_memory(queue); }
+
+
+//////////////////
+
+
+Deque deque_create() { return list_create(); }
+
+StructureResult deque_insert_front(Deque deque, Node node) { return list_insert(deque, node, 0); }
+
+StructureResult deque_insert_back(Deque deque, Node node) { return list_insert(deque, node, list_length(deque)); }
+
+Node deque_detach_front(Deque deque) { return list_detach(deque, 0); }
+
+Node deque_detach_back(Deque deque) { return list_detach(deque, list_length(deque)-1); }
+
+StructureResult deque_clear(Deque deque) { return list_clear(deque); }
+
+StructureResult deque_destroy(Deque deque) { return list_destroy(deque); }
+
+const void* deque_front(const Deque deque) { return list_get(deque, 0); }
+
+const void* deque_back(const Deque deque) { return list_get(deque, list_length(deque)-1); }
+
+size_t deque_length(const Deque deque) { return list_length(deque); }
+
+size_t deque_size(const Deque deque) { return list_size(deque); }
+
+size_t deque_memory(const Deque deque) { return list_memory(deque); }
+
 
 //////////////////
