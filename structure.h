@@ -27,6 +27,8 @@ Node node_create(const void* element, size_t size);
 StructureResult node_link(Node left, Node right);
 StructureResult node_unlink(Node node);
 StructureResult node_destroy(Node* node);
+const void* node_data(Node node);
+size_t node_size(Node node);
 
 
 //////////////////

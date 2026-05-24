@@ -3,6 +3,7 @@
 #include <string.h>
 #include "structure.h"
 
+
 typedef struct __Node {
     struct __Node* prev;
     struct __Node* next;
@@ -77,6 +78,24 @@ StructureResult node_destroy(Node* node) {
     (*node) = NULL;
 
     return STRUCTURE_OK;
+}
+
+/**
+ * @brief Returns the data of the node
+ * @param node The node of the wanted data
+ * @return The data of the node
+ */
+const void* node_data(Node node) {
+    return node->data;
+}
+
+/**
+ * @brief Returns the size of the node
+ * @param node The node of the wanted size
+ * @return The size of the node
+ */
+size_t node_size(Node node) {
+    return node->size;
 }
 
 
@@ -195,7 +214,7 @@ static StructureResult list_clear(LinkedList list) {
 static StructureResult list_destroy(LinkedList list) {
     StructureResult state = STRUCTURE_OK; 
     if(list != NULL) {
-        if(list_length(list) != 0) state = list_clear(list);
+        if(list->length != 0) state = list_clear(list);
         free(list); 
         return state;
     }
