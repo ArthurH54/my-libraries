@@ -1,0 +1,49 @@
+#include <stdlib.h>
+
+typedef unsigned char byte;
+
+typedef struct __Vector {
+    byte* data;
+    size_t length;
+    size_t element_size;
+    size_t capacity;
+} _Vector;
+typedef _Vector* Vector;
+
+
+//////////////////////////
+
+
+typedef struct _Record {
+    void* data;
+    size_t size;
+    size_t priority;
+    char* key;
+} Record;
+
+typedef struct __Node {
+    Record record;
+    Vector links;
+} _Node;
+typedef _Node* Node;
+
+typedef struct __Fork {
+    Record record;
+    struct __Fork* parent;
+    Vector children;
+} _Fork;
+typedef _Fork* Fork;
+
+typedef struct __Cell {
+    Record record;
+    struct __Cell* prev;
+    struct __Cell* next;
+} _Cell;
+typedef _Cell* Cell;
+
+
+//////////////////////////
+
+/*
+Funções de vetor: vector_create, vector_insert, vector_remove, vector_get, vector_data, vector_length, vector_clear, vector_destroy
+*/
